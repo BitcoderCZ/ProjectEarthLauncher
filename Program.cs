@@ -7,13 +7,11 @@ namespace ProjectEarthLauncher
 {
     /*
      * TODO:
-     * -Input.Enum
-     * -add: yes, but ask again; no, but ask again to checkFileAction
      * 
      */
     internal static class Program
     {
-        public const string Version = "2.0.0";
+        public const string Version = "2.0.2";
 
 #if WINDOWS
         [STAThread]

@@ -60,6 +60,32 @@ namespace ProjectEarthLauncher
                 return Input.YN("Couldn't automatically detect if Api is release or source code, please specify it manually (release - Y, source - N)", false);
         }
 
+        public void DownloadFile(RemoteFileInfo info, string path, string displayName)
+        {
+            download:
+            if (checkFileAction(path))
+            {
+                Utils.DownloadFile(info.Url, path, displayName);
+                if (info.ExpectedMinSize > -1)
+                {
+                    FileInfo fInfo = new FileInfo(path);
+                    if (!fInfo.Exists || fInfo.Length < info.ExpectedMinSize)
+                    {
+                        Logger.Info($"Failed to download {displayName}, only {(fInfo.Exists ? fInfo.Length : 0)}B were downloaded, minimum file size: {info.ExpectedMinSize}B", true);
+                        if (Input.YN("Do you want to attempt to download the file again?", true))
+                        {
+                            fInfo.Delete();
+                            goto download;
+                        } else
+                        {
+                            fInfo.Delete();
+                            throw new Exception($"Failed to download \"{path}\"");
+                        }
+                    }
+                }
+            }
+        }
+
         public void DownloadFile(string url, string path, string displayName)
         {
             if (checkFileAction(path))

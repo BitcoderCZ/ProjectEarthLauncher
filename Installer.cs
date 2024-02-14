@@ -11,8 +11,6 @@ using System.Reflection;
 using System.Security.Policy;
 using System.Text;
 using System.Threading.Tasks;
-using static System.Net.Mime.MediaTypeNames;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace ProjectEarthLauncher
 {
@@ -43,14 +41,25 @@ namespace ProjectEarthLauncher
                     Logger.PAKC($"Config file was created: {configPath}");
                 }
 
-                Config config = JsonConvert.DeserializeObject<Config>(File.ReadAllText(configPath));
+                Config config;
+                try
+                {
+                    config = JsonConvert.DeserializeObject<Config>(File.ReadAllText(configPath));
+                }
+                catch
+                {
+                    Logger.PAKC("Config file is invalid, it will be overwritten");
+                    File.WriteAllText(configPath, JsonConvert.SerializeObject(Config.Default, Formatting.Indented));
+                    config = JsonConvert.DeserializeObject<Config>(File.ReadAllText(configPath));
+                }
 
                 Context context = new Context(config, installDir, api || cloudburst ? Utils.GetLocalIP() : null);
 
                 if (api && !installApi(context)) return;
                 if (cloudburst && !installCloudburst(context)) return;
                 if (tileServer && !installTileServer(context)) return;
-            } catch (Exception ex)
+            }
+            catch (Exception ex)
             {
                 Logger.Info($"There was an exception during installation:");
                 Logger.Exception(ex);
@@ -103,7 +112,7 @@ namespace ProjectEarthLauncher
             string dataPath = isRelease ? Path.Combine(context.ApiDir, "data") : Path.Combine(context.ApiDir, "ProjectEarthServerAPI", "data");
 
             // config
-            string configPath = Path.Combine(dataPath, "config",  "apiconfig.json");
+            string configPath = Path.Combine(dataPath, "config", "apiconfig.json");
             JObject apiConfig = JObject.Parse(File.ReadAllText(configPath));
             apiConfig["baseServerIP"] = $"http://{context.Ip}";
             apiConfig["useBaseServerIP"] = false;
@@ -119,7 +128,7 @@ namespace ProjectEarthLauncher
             if (context.Ip.Port != 80)
             {
                 if (isRelease)
-                    Logger.PAKC("Cannot change port that api is running on (80), because api is release. If you want to change it api needs to be source code");
+                    Logger.PAKC("Cannot change port that api is running on (80), because api is release. If you want to change it, api needs to be source code");
                 else
                 {
                     string appSettingsPath = Path.Combine(context.ApiDir, "ProjectEarthServerAPI", "appsettings.json");
@@ -155,9 +164,11 @@ namespace ProjectEarthLauncher
                 // wait max 90s
                 if (!process.WaitForExit(90 * 1000))
                     process.Kill(true);
+
+                int exitCode = process.ExitCode;
                 process.Dispose();
 
-                if (!gotBuildSucceeded)
+                if (!gotBuildSucceeded && exitCode != 0)
                 {
                     Logger.PAKC($"Failed to build api");
                     return false;
@@ -180,23 +191,7 @@ namespace ProjectEarthLauncher
 
             Directory.CreateDirectory(context.CloudburstDir);
 
-            string cloudburstJarPath = Path.Combine(context.CloudburstDir, "cloudburst.jar");
-        downloadCloudburst:
-            context.DownloadFile(context.Config.CloudburstUrl, cloudburstJarPath, "Cloudburst");
-
-            if (!new FileInfo(cloudburstJarPath).Exists || new FileInfo(cloudburstJarPath).Length < 15000 * 1024)
-            {
-                if (Input.YN("Failed to download Cloudburst, do you want to try again", true))
-                {
-                    File.Delete(cloudburstJarPath);
-                    goto downloadCloudburst;
-                }
-                else
-                {
-                    File.Delete(cloudburstJarPath);
-                    return false;
-                }
-            }
+            context.DownloadFile(context.Config.CloudburstUrl, Path.Combine(context.CloudburstDir, "cloudburst.jar"), "Cloudburst");
 
             string runScriptPath = Path.Combine(context.CloudburstDir, "run.bat");
             context.WriteAllText(runScriptPath, "java -jar cloudburst.jar");
@@ -340,21 +335,37 @@ namespace ProjectEarthLauncher
                 Api = new ApiConfig()
                 {
                     IsGitRepo = true,
-                    Url = "https://github.com/jackcaver/Api.git"
+                    Url = "https://github.com/BitcoderCZ/ProjectEarthApi.git",
                 },
-                ResourcepackUrl = "https://www.dropbox.com/scl/fi/kbyysugyhb94zj9zb6pgc/vanilla.zip?rlkey=xt6c7nhpbzzyw7gua524ssb40&dl=1",
-                CloudburstUrl = "https://ci.rtm516.co.uk/job/ProjectEarth/job/Server/job/earth-inventory/lastSuccessfulBuild/artifact/target/Cloudburst.jar",
-                GenoaPluginUrl = "https://www.googleapis.com/drive/v3/files/1DIX9pT7B460iPd8tWysi4KQCxQqwQNL8?alt=media&key=AIzaSyAA9ERw-9LZVEohRYtCWka_TQc6oXmvcVU&supportsAllDrives=True",
-                GenoaAllocatorPluginUrl = "https://www.googleapis.com/drive/v3/files/1m6PrdPTAl6k4k36pq44Lw-U-hDhixPwk?alt=media&key=AIzaSyAA9ERw-9LZVEohRYtCWka_TQc6oXmvcVU&supportsAllDrives=True",
+                ResourcepackUrl = new RemoteFileInfo()
+                {
+                    Url = "https://www.dropbox.com/scl/fi/kbyysugyhb94zj9zb6pgc/vanilla.zip?rlkey=xt6c7nhpbzzyw7gua524ssb40&dl=1",
+                    ExpectedMinSize = 100000000
+                },
+                CloudburstUrl = new RemoteFileInfo()
+                {
+                    Url = "https://ci.rtm516.co.uk/job/ProjectEarth/job/Server/job/earth-inventory/lastSuccessfulBuild/artifact/target/Cloudburst.jar",
+                    ExpectedMinSize = 25000000
+                },
+                GenoaPluginUrl = new RemoteFileInfo()
+                {
+                    Url = "https://www.googleapis.com/drive/v3/files/1DIX9pT7B460iPd8tWysi4KQCxQqwQNL8?alt=media&key=AIzaSyAA9ERw-9LZVEohRYtCWka_TQc6oXmvcVU&supportsAllDrives=True",
+                    ExpectedMinSize = 90000
+                },
+                GenoaAllocatorPluginUrl = new RemoteFileInfo()
+                {
+                    Url = "https://www.googleapis.com/drive/v3/files/1m6PrdPTAl6k4k36pq44Lw-U-hDhixPwk?alt=media&key=AIzaSyAA9ERw-9LZVEohRYtCWka_TQc6oXmvcVU&supportsAllDrives=True",
+                    ExpectedMinSize = 140000
+                },
                 TileServerUrl = "https://github.com/SuperMatejCZ/TileServer.git",
             };
 
             public ApiConfig Api { get; set; }
-            public string ResourcepackUrl { get; set; }
+            public RemoteFileInfo ResourcepackUrl { get; set; }
 
-            public string CloudburstUrl { get; set; }
-            public string GenoaPluginUrl { get; set; }
-            public string GenoaAllocatorPluginUrl { get; set; }
+            public RemoteFileInfo CloudburstUrl { get; set; }
+            public RemoteFileInfo GenoaPluginUrl { get; set; }
+            public RemoteFileInfo GenoaAllocatorPluginUrl { get; set; }
 
             public string TileServerUrl { get; set; }
 
